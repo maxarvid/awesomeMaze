@@ -11,7 +11,13 @@ var camPositionInLabyrinth, camRotationInLabyrinth;
 
 function createQRCodeMaze(nameOfYourLover) {
     //number of modules count or cube in width/height
-    var mCount = 33;
+    // It needs a HTML element to work with
+    var qrcode = new QRCode(document.createElement("div"), { width: 400, height: 400 });
+
+    qrcode.makeCode(nameOfYourLover + ", I love you!");
+
+    // needed to set the proper size of the playground
+    var mCount = qrcode._oQRCode.moduleCount;
 
     var scene = new BABYLON.Scene(engine);
     scene.gravity = new BABYLON.Vector3(0, -0.8, 0);
@@ -62,9 +68,6 @@ function createQRCodeMaze(nameOfYourLover) {
 
     //TO DO: create the labyrinth
     // The position of our cube:
-    var row = 15;
-    var col = 20;
-
     var cubeTopMaterial = new BABYLON.StandardMaterial("cubeTop", scene);
     cubeTopMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.1, 0.15);
 
@@ -77,19 +80,29 @@ function createQRCodeMaze(nameOfYourLover) {
     cubeMultiMat.subMaterials.push(cubeTopMaterial);
     cubeMultiMat.subMaterials.push(cubeWallMaterial);
 
-    var soloCube = BABYLON.Mesh.CreateBox("mainCube", BLOCK_SIZE, scene);
-    soloCube.subMeshes = [];
-    soloCube.subMeshes.push(new BABYLON.SubMesh(0, 0, 4, 0, 6, soloCube));
-    soloCube.subMeshes.push(new BABYLON.SubMesh(1, 4, 20, 6, 30, soloCube));
+    for (var row = 0; row < mCount; row++) {
+        for (var col = 0; col < mCount; col++) {
+            if (qrcode._oQRCode.isDark(row, col)) {
+                var soloCube = BABYLON.Mesh.CreateBox("mainCube", BLOCK_SIZE, scene);
+                soloCube.subMeshes = [];
+                soloCube.subMeshes.push(new BABYLON.SubMesh(0, 0, 4, 0, 6, soloCube));
+                soloCube.subMeshes.push(new BABYLON.SubMesh(1, 4, 20, 6, 30, soloCube));
+                // same as soloCube.rotation.x = -Math.PI / 2; 
+                // but cannon.js needs rotation to be set via Quaternion
+                soloCube.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(0, -Math.PI / 2, 0);
+                soloCube.material = cubeMultiMat;
+                soloCube.checkCollisions = true;
+                soloCube.position = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE,
+                                                        BLOCK_SIZE / 2,
+                                                        BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
+            }
+        }
+    }
 
-    // same as soloCube.rotation.x = -Math.PI / 2; 
-    // but cannon.js needs rotation to be set via Quaternion
-    soloCube.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(0, -Math.PI / 2, 0);
-    soloCube.material = cubeMultiMat;
-    soloCube.checkCollisions = true;
-    soloCube.position = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE, BLOCK_SIZE / 2,
-                                            BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
-        
+var x = BLOCK_SIZE / 2 + (7 - (mCount / 2)) * BLOCK_SIZE;
+var y = BLOCK_SIZE / 2 + (1 - (mCount / 2)) * BLOCK_SIZE;
+freeCamera.position = new BABYLON.Vector3(x, 5, y);
+
     return scene;
 };
 
