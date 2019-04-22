@@ -4,22 +4,22 @@
 
 // Size of a cube/block
 var BLOCK_SIZE = 8;
-// Are we inside the maze or looking at the QR Code in bird view?
+// Are we inside the labyrinth or looking at the QR Code in zoom out?
 var QRCodeView = false;
 var freeCamera, canvas, engine, lovescene;
 var camPositionInLabyrinth, camRotationInLabyrinth;
 
-function createQRCodeMaze(nameOfYourLover) {
-    //number of modules count or cube in width/height
+function createQRCodeLabyrinth(nameOfYourLover) {
+    //number of module count or cube in width/height
+    //var mCount = 33;
     // It needs a HTML element to work with
     var qrcode = new QRCode(document.createElement("div"), { width: 400, height: 400 });
-
     qrcode.makeCode(nameOfYourLover + ", I love you!");
-
     // needed to set the proper size of the playground
     var mCount = qrcode._oQRCode.moduleCount;
 
     var scene = new BABYLON.Scene(engine);
+
     scene.gravity = new BABYLON.Vector3(0, -0.8, 0);
     scene.collisionsEnabled = true;
 
@@ -41,9 +41,7 @@ function createQRCodeMaze(nameOfYourLover) {
     groundMaterial.specularTexture.uScale = mCount;
     groundMaterial.specularTexture.vScale = mCount;
 
-    var ground = BABYLON.Mesh.CreateGround("ground", (mCount + 2) * BLOCK_SIZE, 
-                                                     (mCount + 2) * BLOCK_SIZE, 
-                                                      1, scene, false);
+    var ground = BABYLON.Mesh.CreateGround("ground", (mCount + 2) * BLOCK_SIZE, (mCount + 2) * BLOCK_SIZE, 1, scene, false);
     ground.material = groundMaterial;
     ground.checkCollisions = true;
 
@@ -67,7 +65,6 @@ function createQRCodeMaze(nameOfYourLover) {
     light1.intensity = 0.2;
 
     //TO DO: create the labyrinth
-    // The position of our cube:
     var cubeTopMaterial = new BABYLON.StandardMaterial("cubeTop", scene);
     cubeTopMaterial.emissiveColor = new BABYLON.Color3(0.1, 0.1, 0.15);
 
@@ -84,12 +81,21 @@ function createQRCodeMaze(nameOfYourLover) {
     soloCube.subMeshes = [];
     soloCube.subMeshes.push(new BABYLON.SubMesh(0, 0, 4, 0, 6, soloCube));
     soloCube.subMeshes.push(new BABYLON.SubMesh(1, 4, 20, 6, 30, soloCube));
+    // same as soloCube.rotation.x = -Math.PI / 2; 
+    // but cannon.js needs rotation to be set via Quaternion
     soloCube.rotationQuaternion = BABYLON.Quaternion.RotationYawPitchRoll(0, -Math.PI / 2, 0);
     soloCube.material = cubeMultiMat;
     soloCube.checkCollisions = true;
     soloCube.setEnabled(false);
 
-    var cube;
+    var topCube = BABYLON.Mesh.CreatePlane("ground", BLOCK_SIZE, scene, false);
+    topCube.material = cubeTopMaterial;
+    topCube.rotation.x = Math.PI / 2;
+    topCube.setEnabled(false);
+
+    var cube, top;
+    var cubesCollection = [];
+    var cubesTopCollection = [];
 
     for (var row = 0; row < mCount; row++) {
         for (var col = 0; col < mCount; col++) {
@@ -98,14 +104,27 @@ function createQRCodeMaze(nameOfYourLover) {
                 cube.position = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE,
                                                     BLOCK_SIZE / 2,
                                                     BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
+                top = topCube.clone("TopClonedCube" + row + col);
+                top.position = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE,
+                                                    BLOCK_SIZE + 0.05,
+                                                    BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
+                cubesCollection.push(cube);
+                cubesTopCollection.push(top);
             }
         }
     }
 
-var x = BLOCK_SIZE / 2 + (7 - (mCount / 2)) * BLOCK_SIZE;
-var y = BLOCK_SIZE / 2 + (1 - (mCount / 2)) * BLOCK_SIZE;
+    var maze = mergeMeshes("maze", cubesCollection, scene);
+    maze.checkCollisions = true;
+    maze.material = cubeWallMaterial;
 
-freeCamera.position = new BABYLON.Vector3(x, 5, y);
+    var mazeTop = mergeMeshes("mazeTop", cubesTopCollection, scene);
+    mazeTop.material = cubeTopMaterial;
+
+    var x = BLOCK_SIZE / 2 + (7 - (mCount / 2)) * BLOCK_SIZE;
+    var y = BLOCK_SIZE / 2 + (1 - (mCount / 2)) * BLOCK_SIZE;
+
+    freeCamera.position = new BABYLON.Vector3(x, 5, y);
 
     return scene;
 };
@@ -122,7 +141,7 @@ window.onload = function () {
             engine.resize();
         });
 
-        lovescene = createQRCodeMaze("Jane Doe");
+        lovescene = createQRCodeLabyrinth("Jane Doe");
         // Enable keyboard/mouse controls on the scene (FPS like mode)
         lovescene.activeCamera.attachControl(canvas);
 
@@ -130,4 +149,105 @@ window.onload = function () {
             lovescene.render();
         });
     }
+};
+
+var mergeMeshes = function (meshName, arrayObj, scene) {
+    var arrayPos = [];
+    var arrayNormal = [];
+    var arrayUv = [];
+    var arrayUv2 = [];
+    var arrayColor = [];
+    var arrayMatricesIndices = [];
+    var arrayMatricesWeights = [];
+    var arrayIndice = [];
+    var savedPosition = [];
+    var savedNormal = [];
+    var newMesh = new BABYLON.Mesh(meshName, scene);
+    var UVKind = true;
+    var UV2Kind = true;
+    var ColorKind = true;
+    var MatricesIndicesKind = true;
+    var MatricesWeightsKind = true;
+    var i;
+    var it;
+    var ite;
+    var iter;
+
+    for (i = 0; i != arrayObj.length ; i++) {
+        if (!arrayObj[i].isVerticesDataPresent([BABYLON.VertexBuffer.UVKind]))
+            UVKind = false;
+        if (!arrayObj[i].isVerticesDataPresent([BABYLON.VertexBuffer.UV2Kind]))
+            UV2Kind = false;
+        if (!arrayObj[i].isVerticesDataPresent([BABYLON.VertexBuffer.ColorKind]))
+            ColorKind = false;
+        if (!arrayObj[i].isVerticesDataPresent([BABYLON.VertexBuffer.MatricesIndicesKind]))
+            MatricesIndicesKind = false;
+        if (!arrayObj[i].isVerticesDataPresent([BABYLON.VertexBuffer.MatricesWeightsKind]))
+            MatricesWeightsKind = false;
+    }
+
+    for (i = 0; i != arrayObj.length ; i++) {
+        var ite = 0;
+        var iter = 0;
+        arrayPos[i] = arrayObj[i].getVerticesData(BABYLON.VertexBuffer.PositionKind);
+        arrayNormal[i] = arrayObj[i].getVerticesData(BABYLON.VertexBuffer.NormalKind);
+        if (UVKind)
+            arrayUv = arrayUv.concat(arrayObj[i].getVerticesData(BABYLON.VertexBuffer.UVKind));
+        if (UV2Kind)
+            arrayUv2 = arrayUv2.concat(arrayObj[i].getVerticesData(BABYLON.VertexBuffer.UV2Kind));
+        if (ColorKind)
+            arrayColor = arrayColor.concat(arrayObj[i].getVerticesData(BABYLON.VertexBuffer.ColorKind));
+        if (MatricesIndicesKind)
+            arrayMatricesIndices = arrayMatricesIndices.concat(arrayObj[i].getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind));
+        if (MatricesWeightsKind)
+            arrayMatricesWeights = arrayMatricesWeights.concat(arrayObj[i].getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind));
+
+        var maxValue = savedPosition.length / 3;
+
+        arrayObj[i].computeWorldMatrix(true);
+        var worldMatrix = arrayObj[i].getWorldMatrix();
+
+        while (ite < arrayPos[i].length) {
+            var vertex = new BABYLON.Vector3.TransformCoordinates(new BABYLON.Vector3(arrayPos[i][ite], arrayPos[i][ite + 1], arrayPos[i][ite + 2]), worldMatrix);
+            savedPosition.push(vertex.x);
+            savedPosition.push(vertex.y);
+            savedPosition.push(vertex.z);
+            ite = ite + 3;
+        }
+        while (iter < arrayNormal[i].length) {
+            var vertex = new BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(arrayNormal[i][iter], arrayNormal[i][iter + 1], arrayNormal[i][iter + 2]), worldMatrix);
+            savedNormal.push(vertex.x);
+            savedNormal.push(vertex.y);
+            savedNormal.push(vertex.z);
+            iter = iter + 3;
+        }
+        if (i > 0) {
+            var tmp = arrayObj[i].getIndices();
+            for (it = 0 ; it != tmp.length; it++) {
+                tmp[it] = tmp[it] + maxValue;
+            }
+            arrayIndice = arrayIndice.concat(tmp);
+        }
+        else {
+            arrayIndice = arrayObj[i].getIndices();
+        }
+
+        arrayObj[i].dispose(false);
+    }
+
+    newMesh.setVerticesData(savedPosition, BABYLON.VertexBuffer.PositionKind, false);
+    newMesh.setVerticesData(savedNormal, BABYLON.VertexBuffer.NormalKind, false);
+    if (arrayUv.length > 0)
+        newMesh.setVerticesData(arrayUv, BABYLON.VertexBuffer.UVKind, false);
+    if (arrayUv2.length > 0)
+        newMesh.setVerticesData(arrayUv, BABYLON.VertexBuffer.UV2Kind, false);
+    if (arrayColor.length > 0)
+        newMesh.setVerticesData(arrayUv, BABYLON.VertexBuffer.ColorKind, false);
+    if (arrayMatricesIndices.length > 0)
+        newMesh.setVerticesData(arrayUv, BABYLON.VertexBuffer.MatricesIndicesKind, false);
+    if (arrayMatricesWeights.length > 0)
+        newMesh.setVerticesData(arrayUv, BABYLON.VertexBuffer.MatricesWeightsKind, false);
+
+    newMesh.setIndices(arrayIndice);
+    return newMesh;
 };
