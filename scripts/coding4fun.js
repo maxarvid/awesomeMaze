@@ -20,6 +20,8 @@ function createQRCodeLabyrinth(nameOfYourLover) {
 
     var scene = new BABYLON.Scene(engine);
 
+    scene.enablePhysics(new BABYLON.Vector3(0, 0, 0));
+
     scene.gravity = new BABYLON.Vector3(0, -0.8, 0);
     scene.collisionsEnabled = true;
 
@@ -44,6 +46,7 @@ function createQRCodeLabyrinth(nameOfYourLover) {
     var ground = BABYLON.Mesh.CreateGround("ground", (mCount + 2) * BLOCK_SIZE, (mCount + 2) * BLOCK_SIZE, 1, scene, false);
     ground.material = groundMaterial;
     ground.checkCollisions = true;
+    ground.setPhysicsState({ impostor: BABYLON.PhysicsEngine.PlaneImpostor, mass: 0, friction: 0.5, restitution: 0.7 });
 
     //Skybox
     var skybox = BABYLON.Mesh.CreateBox("skyBox", 800.0, scene);
@@ -93,23 +96,50 @@ function createQRCodeLabyrinth(nameOfYourLover) {
     topCube.rotation.x = Math.PI / 2;
     topCube.setEnabled(false);
 
+    var mainCube = BABYLON.Mesh.CreateBox("mainCube", BLOCK_SIZE, scene);
+    mainCube.material = cubeWallMaterial;
+    mainCube.checkCollisions = true;
+    mainCube.setEnabled(false);
+
     var cube, top;
     var cubesCollection = [];
     var cubesTopCollection = [];
+    var cubeOnLeft, cubeOnRight, cubeOnUp, cubeOnDown;
 
     for (var row = 0; row < mCount; row++) {
         for (var col = 0; col < mCount; col++) {
             if (qrcode._oQRCode.isDark(row, col)) {
-                cube = soloCube.clone("ClonedCube" + row + col);
-                cube.position = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE,
-                                                    BLOCK_SIZE / 2,
-                                                    BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
-                top = topCube.clone("TopClonedCube" + row + col);
-                top.position = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE,
-                                                    BLOCK_SIZE + 0.05,
-                                                    BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
-                cubesCollection.push(cube);
-                cubesTopCollection.push(top);
+                var cubePosition = new BABYLON.Vector3(BLOCK_SIZE / 2 + (row - (mCount / 2)) * BLOCK_SIZE,
+                                                        BLOCK_SIZE / 2,
+                                                        BLOCK_SIZE / 2 + (col - (mCount / 2)) * BLOCK_SIZE);
+
+                cubeOnLeft = cubeOnRight = cubeOnUp = cubeOnDown = false;
+                if (col > 0) {
+                    cubeOnLeft = qrcode._oQRCode.isDark(row, col - 1)
+                }
+                if (col < mCount - 1) {
+                    cubeOnRight = qrcode._oQRCode.isDark(row, col + 1)
+                }
+                if (row > 0) {
+                    cubeOnUp = qrcode._oQRCode.isDark(row - 1, col)
+                }
+                if (row < mCount - 1) {
+                    cubeOnDown = qrcode._oQRCode.isDark(row + 1, col)
+                }
+                if (cubeOnLeft || cubeOnRight || cubeOnUp || cubeOnDown) {
+                    cube = mainCube.clone("Cube" + row + col);
+                    cube.position = cubePosition.clone();
+                    top = topCube.clone("TopCube" + row + col);
+                    top.position = cubePosition.clone();
+                    top.position.y = BLOCK_SIZE + 0.05;
+                    cubesCollection.push(cube);
+                    cubesTopCollection.push(top);
+                }
+                else {
+                    cube = soloCube.clone("SoloCube" + row + col);
+                    cube.position = cubePosition.clone();
+                    cube.setPhysicsState({ impostor: BABYLON.PhysicsEngine.BoxImpostor, mass: 2, friction: 0.4, restitution: 0.3 });
+                }
             }
         }
     }
@@ -126,27 +156,76 @@ function createQRCodeLabyrinth(nameOfYourLover) {
 
     freeCamera.position = new BABYLON.Vector3(x, 5, y);
 
+    window.addEventListener("keydown", function (event) {
+        if (event.keyCode === 32) {
+            if (!QRCodeView) {
+                QRCodeView = true;
+                // Saving current position & rotation in the labyrinth
+                camPositionInLabyrinth = freeCamera.position;
+                camRotationInLabyrinth = freeCamera.rotation;
+                animateCameraPositionAndRotation(freeCamera, freeCamera.position,
+                    new BABYLON.Vector3(16, 400, 15),
+                    freeCamera.rotation,
+                    new BABYLON.Vector3(1.4912565104551518, -1.5709696842019767, freeCamera.rotation.z));
+            }
+            else {
+                QRCodeView = false;
+                animateCameraPositionAndRotation(freeCamera, freeCamera.position,
+                    camPositionInLabyrinth, freeCamera.rotation, camRotationInLabyrinth);
+            }
+            freeCamera.applyGravity = !QRCodeView;
+        }
+    }, false);
+
+    canvas.addEventListener("mousedown", function (evt) {
+        var pickResult = scene.pick(evt.clientX, evt.clientY);
+
+        if (pickResult.hit) {
+            var dir = pickResult.pickedPoint.subtract(scene.activeCamera.position);
+            dir.normalize();
+            pickResult.pickedMesh.applyImpulse(dir.scale(50), pickResult.pickedPoint);
+        }
+    });
+
     return scene;
 };
 
 window.onload = function () {
     canvas = document.getElementById("canvas");
 
+    $("#dialog-form").dialog({
+        autoOpen: true,
+        height: 300,
+        width: 350,
+        modal: true,
+        buttons: {
+            "Create": function () {
+                //Creating scene
+                lovescene = createQRCodeLabyrinth($("#name").val());
+
+                lovescene.activeCamera.attachControl(canvas);
+
+                // Once the scene is loaded, just register a render loop to render it
+                engine.runRenderLoop(function () {
+                    lovescene.render();
+                });
+
+                canvas.className = "offScreen onScreen";
+                $(this).dialog("close");
+            }
+        }
+    });
+
+    // Check support
     if (!BABYLON.Engine.isSupported()) {
         window.alert('Browser not supported');
     } else {
+        // Babylon
         engine = new BABYLON.Engine(canvas, true);
 
+        // Resize
         window.addEventListener("resize", function () {
             engine.resize();
-        });
-
-        lovescene = createQRCodeLabyrinth("Jane Doe");
-        // Enable keyboard/mouse controls on the scene (FPS like mode)
-        lovescene.activeCamera.attachControl(canvas);
-
-        engine.runRenderLoop(function () {
-            lovescene.render();
         });
     }
 };
@@ -250,4 +329,43 @@ var mergeMeshes = function (meshName, arrayObj, scene) {
 
     newMesh.setIndices(arrayIndice);
     return newMesh;
+};
+
+var animateCameraPositionAndRotation = function (freeCamera, fromPosition, toPosition,
+                                                 fromRotation, toRotation) {
+
+    var animCamPosition = new BABYLON.Animation("animCam", "position", 30,
+                              BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+                              BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
+
+    var keysPosition = [];
+    keysPosition.push({
+        frame: 0,
+        value: fromPosition
+    });
+    keysPosition.push({
+        frame: 100,
+        value: toPosition
+    });
+    animCamPosition.setKeys(keysPosition);
+
+    var animCamRotation = new BABYLON.Animation("animCam", "rotation", 30,
+                              BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+                              BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
+
+    var keysRotation = [];
+    keysRotation.push({
+        frame: 0,
+        value: fromRotation
+    });
+    keysRotation.push({
+        frame: 100,
+        value: toRotation
+    });
+    animCamRotation.setKeys(keysRotation);
+
+    freeCamera.animations.push(animCamPosition);
+    freeCamera.animations.push(animCamRotation);
+
+    lovescene.beginAnimation(freeCamera, 0, 100, false);
 };
